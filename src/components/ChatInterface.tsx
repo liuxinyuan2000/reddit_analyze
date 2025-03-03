@@ -18,9 +18,10 @@ interface Message {
 
 interface ChatInterfaceProps {
   subreddit: string;
+  apiKey: string;
 }
 
-export function ChatInterface({ subreddit }: ChatInterfaceProps) {
+export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +73,7 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
+          'X-OpenAI-API-Key': apiKey,
         },
         body: JSON.stringify({
           message: input,
