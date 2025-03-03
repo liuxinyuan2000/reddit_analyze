@@ -2,7 +2,14 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 import OpenAI from 'openai';
 
-// OpenAI 客户端将在每个请求中初始化，使用从请求头中获取的 API 密钥
+// 检查是否有API密钥
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('警告: 未设置OPENAI_API_KEY环境变量');
+}
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || '',
+});
 
 type Message = {
   role: 'user' | 'assistant' | 'system';
@@ -115,15 +122,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { message, subreddit, conversationId } = req.body;
-    const apiKey = req.headers['x-openai-api-key'] as string;
 
     if (!message) {
       return res.status(400).json({ error: '消息不能为空' });
     }
     
-    // 检查OpenAI API密钥是否在请求头中提供
-    if (!apiKey) {
-      return res.status(400).json({ error: '请提供OpenAI API密钥' });
+    // 检查OpenAI API密钥是否设置
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'OpenAI API密钥未设置，请在环境变量中设置OPENAI_API_KEY' });
     }
 
     // 获取或创建对话
@@ -162,14 +168,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 调用 OpenAI API 并流式返回结果
     console.log('开始调用 OpenAI API');
-    console.log('使用的 API 密钥前几位:', apiKey.substring(0, 10) + '...');
+    console.log('使用的 API 密钥前几位:', process.env.OPENAI_API_KEY?.substring(0, 10) + '...');
     
     try {
-      // 为每个请求创建一个新的 OpenAI 客户端实例，使用用户提供的 API 密钥
-      const openai = new OpenAI({
-        apiKey: apiKey,
-      });
-      
       const completion = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: conversation.messages,

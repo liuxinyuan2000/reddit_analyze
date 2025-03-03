@@ -9,7 +9,10 @@ import {
   Text,
   Container,
   Flex,
+  useDisclosure,
+  useToast,
 } from '@chakra-ui/react';
+import { PaymentModal } from './PaymentModal';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -18,10 +21,12 @@ interface Message {
 
 interface ChatInterfaceProps {
   subreddit: string;
-  apiKey: string;
 }
 
-export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
+// 免费用户的每日最大消息数
+const DAILY_MESSAGE_LIMIT = 10;
+
+export function ChatInterface({ subreddit }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -29,6 +34,32 @@ export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
   const [error, setError] = useState<string>();
   const [isTyping, setIsTyping] = useState(false);
   const [cursorVisible, setCursorVisible] = useState(true);
+  const [messageCount, setMessageCount] = useState(0);
+  const [isPremium, setIsPremium] = useState(false);
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  
+  // 从 localStorage 加载消息计数和会员状态
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedMessageCount = localStorage.getItem('messageCount');
+      const storedIsPremium = localStorage.getItem('isPremium');
+      const storedDate = localStorage.getItem('lastMessageDate');
+      const currentDate = new Date().toDateString();
+      
+      // 如果是新的一天，重置消息计数
+      if (storedDate !== currentDate) {
+        localStorage.setItem('lastMessageDate', currentDate);
+        localStorage.setItem('messageCount', '0');
+        setMessageCount(0);
+      } else if (storedMessageCount) {
+        setMessageCount(parseInt(storedMessageCount, 10));
+      }
+      
+      if (storedIsPremium === 'true') {
+        setIsPremium(true);
+      }
+    }
+  }, []);
   
   // 实现光标闪烁效果
   useEffect(() => {
@@ -44,6 +75,13 @@ export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
   const handleSend = async () => {
     if (!input.trim()) return;
     setError(undefined);
+    
+    // 检查每日消息限制
+    if (messageCount >= DAILY_MESSAGE_LIMIT && !isPremium) {
+      // 达到每日限制
+      setError(`您今日的免费消息已用完（${DAILY_MESSAGE_LIMIT}条/天），请明天再来。`);
+      return;
+    }
 
     const userMessage: Message = {
       role: 'user',
@@ -53,6 +91,16 @@ export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    
+    // 增加消息计数
+    const newCount = messageCount + 1;
+    setMessageCount(newCount);
+    
+    // 将消息计数和日期保存到 localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('messageCount', newCount.toString());
+      localStorage.setItem('lastMessageDate', new Date().toDateString());
+    }
 
     try {
       // 创建一个占位消息
@@ -73,7 +121,6 @@ export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
-          'X-OpenAI-API-Key': apiKey,
         },
         body: JSON.stringify({
           message: input,
@@ -172,6 +219,28 @@ export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
       setIsLoading(false);
     }
   };
+  
+  const toast = useToast();
+  
+  const handlePaymentSuccess = () => {
+    // 支付成功后更新会员状态
+    setIsPremium(true);
+    
+    // 将会员状态保存到 localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('isPremium', 'true');
+    }
+    
+    toast({
+      title: '升级成功',
+      description: '您已成功升级到高级会员，享受无限消息特权！',
+      status: 'success',
+      duration: 5000,
+      isClosable: true,
+    });
+    
+    onClose();
+  };
 
   return (
     <Container maxW="container.lg" h="100vh" py={8}>
@@ -252,6 +321,41 @@ export function ChatInterface({ subreddit, apiKey }: ChatInterfaceProps) {
             发送
           </Button>
         </Flex>
+        
+        {/* 消息计数显示 - 暂时隐藏付费相关信息 */}
+        <Flex width="100%" justifyContent="center" alignItems="center" mt={2}>
+          <Text fontSize="sm" color="gray.500">
+            今日已发送 {messageCount}/{DAILY_MESSAGE_LIMIT} 条消息
+          </Text>
+          
+          {/* 测试用重置按钮 */}
+          <Button 
+            size="xs" 
+            ml={2} 
+            colorScheme="gray" 
+            variant="ghost"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('messageCount');
+                localStorage.removeItem('isPremium');
+                localStorage.setItem('lastMessageDate', new Date().toDateString());
+                setMessageCount(0);
+                setIsPremium(false);
+              }
+            }}
+          >
+            重置
+          </Button>
+        </Flex>
+        
+        {/* 付费升级模态框 - 暂时隐藏 */}
+        {/* <PaymentModal 
+          isOpen={isOpen} 
+          onClose={onClose} 
+          onPaymentSuccess={handlePaymentSuccess}
+          messageCount={messageCount}
+          freeMessageLimit={FREE_MESSAGE_LIMIT}
+        /> */}
       </VStack>
     </Container>
   );
