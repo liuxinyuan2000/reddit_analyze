@@ -36,30 +36,55 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
   const [cursorVisible, setCursorVisible] = useState(true);
   const [messageCount, setMessageCount] = useState(0);
   const [isPremium, setIsPremium] = useState(false);
+  const [userId, setUserId] = useState<string>('');
   const { isOpen, onOpen, onClose } = useDisclosure();
+  
+  // 初始化用户ID
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // 从localStorage获取用户ID，如果不存在则创建一个新的
+      let storedUserId = localStorage.getItem('userId');
+      if (!storedUserId) {
+        storedUserId = 'user_' + Date.now();
+        localStorage.setItem('userId', storedUserId);
+      }
+      setUserId(storedUserId);
+    }
+  }, []);
   
   // 从 localStorage 加载消息计数和会员状态
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedMessageCount = localStorage.getItem('messageCount');
       const storedIsPremium = localStorage.getItem('isPremium');
-      const storedDate = localStorage.getItem('lastMessageDate');
-      const currentDate = new Date().toDateString();
-      
-      // 如果是新的一天，重置消息计数
-      if (storedDate !== currentDate) {
-        localStorage.setItem('lastMessageDate', currentDate);
-        localStorage.setItem('messageCount', '0');
-        setMessageCount(0);
-      } else if (storedMessageCount) {
-        setMessageCount(parseInt(storedMessageCount, 10));
-      }
       
       if (storedIsPremium === 'true') {
         setIsPremium(true);
       }
     }
   }, []);
+  
+  // 当用户ID初始化后从后端获取消息计数
+  useEffect(() => {
+    const fetchMessageCount = async () => {
+      if (!userId) return;
+      
+      try {
+        const response = await fetch(`/api/user/message-count?userId=${encodeURIComponent(userId)}`);
+        const data = await response.json();
+        
+        if (response.ok) {
+          setMessageCount(data.count);
+          if (data.premium) {
+            setIsPremium(true);
+          }
+        }
+      } catch (error) {
+        console.error('获取消息计数失败:', error);
+      }
+    };
+    
+    fetchMessageCount();
+  }, [userId]);
   
   // 实现光标闪烁效果
   useEffect(() => {
@@ -76,13 +101,6 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
     if (!input.trim()) return;
     setError(undefined);
     
-    // 检查每日消息限制
-    if (messageCount >= DAILY_MESSAGE_LIMIT && !isPremium) {
-      // 达到每日限制
-      setError(`您今日的免费消息已用完（${DAILY_MESSAGE_LIMIT}条/天），请明天再来。`);
-      return;
-    }
-
     const userMessage: Message = {
       role: 'user',
       content: input,
@@ -92,11 +110,11 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
     setInput('');
     setIsLoading(true);
     
-    // 增加消息计数
+    // 仅用于UI显示
     const newCount = messageCount + 1;
     setMessageCount(newCount);
     
-    // 将消息计数和日期保存到 localStorage
+    // 将消息计数和日期保存到 localStorage (仅用于UI显示)
     if (typeof window !== 'undefined') {
       localStorage.setItem('messageCount', newCount.toString());
       localStorage.setItem('lastMessageDate', new Date().toDateString());
@@ -114,6 +132,7 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
         message: input,
         subreddit,
         conversationId,
+        userId,
       });
 
       const response = await fetch('/api/chat', {
@@ -126,6 +145,7 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
           message: input,
           subreddit,
           conversationId,
+          userId,
         }),
       });
 
@@ -208,6 +228,20 @@ export function ChatInterface({ subreddit }: ChatInterfaceProps) {
       
       // 结束打字状态
       setIsTyping(false);
+      
+      // 请求更新消息计数
+      if (userId) {
+        try {
+          const countResponse = await fetch(`/api/user/message-count?userId=${encodeURIComponent(userId)}`);
+          const countData = await countResponse.json();
+          
+          if (countResponse.ok) {
+            setMessageCount(countData.count);
+          }
+        } catch (error) {
+          console.error('更新消息计数失败:', error);
+        }
+      }
 
     } catch (error) {
       console.error('Error:', error);

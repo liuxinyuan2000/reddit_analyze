@@ -1,6 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 import OpenAI from 'openai';
+import { 
+  checkUserMessageLimit, 
+  incrementUserMessageCount, 
+  DAILY_MESSAGE_LIMIT 
+} from '../../utils/messageLimit';
 
 // 检查是否有API密钥
 if (!process.env.OPENAI_API_KEY) {
@@ -121,7 +126,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    const { message, subreddit, conversationId } = req.body;
+    const { message, subreddit, conversationId, userId = 'anonymous' } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: '消息不能为空' });
@@ -131,6 +136,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!process.env.OPENAI_API_KEY) {
       return res.status(500).json({ error: 'OpenAI API密钥未设置，请在环境变量中设置OPENAI_API_KEY' });
     }
+
+    // 检查用户是否超过了每日消息限制
+    if (checkUserMessageLimit(userId)) {
+      return res.status(429).json({ 
+        error: `您今日的免费消息已用完（${DAILY_MESSAGE_LIMIT}条/天），请明天再来。` 
+      });
+    }
+    
+    // 增加消息计数
+    incrementUserMessageCount(userId);
 
     // 获取或创建对话
     let conversation: Conversation;
